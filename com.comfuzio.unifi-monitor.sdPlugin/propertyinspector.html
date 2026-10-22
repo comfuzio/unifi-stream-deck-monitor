@@ -1,0 +1,52 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { color: var(--sdpi-color); background: var(--sdpi-bgcolor); font: 13px system-ui, sans-serif; padding: 12px; }
+  label { display:block; margin: 10px 0 4px; }
+  input, select { box-sizing:border-box; width:100%; padding:6px; }
+  .hint { opacity:.75; font-size:11px; line-height:1.45; }
+  button { margin-top:12px; padding:7px 10px; }
+</style>
+</head>
+<body>
+<h3>UniFi Monitor</h3>
+<p class="hint">Use a local UniFi OS account. Settings are stored by Stream Deck on this computer.</p>
+<label for="baseUrl">Console URL</label><input id="baseUrl" type="url" placeholder="https://192.168.50.1">
+<label for="username">Username</label><input id="username" autocomplete="username">
+<label for="password">Password</label><input id="password" type="password" autocomplete="current-password">
+<label for="site">Network site name</label><input id="site" value="default">
+<label for="intervalSeconds">Refresh interval</label>
+<select id="intervalSeconds"><option value="2">2 seconds</option><option value="3">3 seconds</option><option value="5">5 seconds</option><option value="10">10 seconds</option><option value="15">15 seconds</option><option value="30">30 seconds</option></select>
+<label><input id="allowSelfSigned" type="checkbox" style="width:auto"> Allow self-signed TLS certificate</label>
+<p class="hint">Only enable this on a trusted private management network. Prefer a valid trusted certificate.</p>
+<button id="save">Save settings</button><span id="result" class="hint"></span>
+<script>
+(() => {
+  let websocket, context, settings = {};
+  const ids = ['baseUrl','username','password','site','intervalSeconds','allowSelfSigned'];
+  const $ = id => document.getElementById(id);
+  function connectElgatoStreamDeckSocket(port, uuid, registerEvent, info, actionInfo) {
+    context = actionInfo ? JSON.parse(actionInfo).context : undefined;
+    websocket = new WebSocket('ws://127.0.0.1:' + port);
+    websocket.onopen = () => websocket.send(JSON.stringify({event:registerEvent,uuid}));
+    websocket.onmessage = event => {
+      const msg = JSON.parse(event.data);
+      if (msg.event === 'sendToPropertyInspector' && msg.payload?.event === 'settings') {
+        settings = msg.payload.settings || {};
+        ids.forEach(id => { if ($(id)) { if ($(id).type === 'checkbox') $(id).checked = settings[id] === true; else if (settings[id] !== undefined) $(id).value = settings[id]; } });
+      }
+    };
+  }
+  $('save').addEventListener('click', () => {
+    const updated = {};
+    ids.forEach(id => updated[id] = $(id).type === 'checkbox' ? $(id).checked : $(id).value);
+    updated.intervalSeconds = Number(updated.intervalSeconds || 3);
+    websocket.send(JSON.stringify({event:'setSettings',context,payload:updated}));
+    $('result').textContent = ' Saved.';
+  });
+  window.connectElgatoStreamDeckSocket = connectElgatoStreamDeckSocket;
+})();
+</script>
+</body></html>
