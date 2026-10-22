@@ -7,6 +7,7 @@ An open-source Elgato Stream Deck plugin for monitoring a local UniFi Network co
 - **Connected clients:** count clients reported by the documented UniFi Network Integration API.
 - **WAN bandwidth:** real-time download/upload throughput. This remains under validation against supported UniFi API data; the plugin must not present historical ISP metrics or guessed counters as live traffic.
 - **Friendly setup:** enter the console address and API key, test the connection, and discover/select the site in the settings UI. No PowerShell or manual site-ID lookup should be needed for normal setup.
+- **Conservative polling:** a 5-second default, configurable from 5 to 60 seconds. Polling is scheduled only while a Stream Deck action is visible, and overlapping polls for the same action are skipped.
 - **Local-first:** requests go directly to the configured console. No telemetry or third-party cloud service is required.
 
 ## Status
@@ -22,6 +23,8 @@ An open-source Elgato Stream Deck plugin for monitoring a local UniFi Network co
 5. Add the bandwidth and client-count keys as needed.
 
 Users should not need to run terminal commands, copy API responses, or manually edit JSON files. A self-signed certificate must be handled explicitly and safely; certificate verification will not be silently disabled.
+
+The default polling interval is 5 seconds (12 polls/minute per visible action that needs one API request). At 10, 30, and 60 seconds the rate is 6, 2, and 1 polls/minute respectively. These are request-rate estimates per action/endpoint, not guarantees about UniFi notifications. API-key requests do not require a new interactive login for every poll, but whether UniFi emits a security event depends on its own logging/notification rules.
 
 ## Requirements
 
