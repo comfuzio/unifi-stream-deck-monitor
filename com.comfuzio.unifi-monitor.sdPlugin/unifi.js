@@ -1,9 +1,9 @@
 'use strict';
 
-const https = require('node:https');
+const { Agent } = require('undici');
 
 function makeAgent(allowSelfSigned) {
-  return new https.Agent({ rejectUnauthorized: !allowSelfSigned });
+  return new Agent({ connect: { rejectUnauthorized: !allowSelfSigned } });
 }
 
 function firstFinite(objects, keys) {
@@ -53,9 +53,7 @@ class UniFiClient {
         headers,
         body: options.body,
         signal: controller.signal,
-        // Node's fetch uses Undici, not https.Agent. Dispatcher support is not assumed here.
-        // TLS verification override is implemented by NODE_TLS_REJECT_UNAUTHORIZED only in a
-        // tightly scoped request below; see requestWithTls().
+        dispatcher: this.agent
       });
       const setCookies = response.headers.getSetCookie?.() || [];
       if (setCookies.length) this.cookie = setCookies.map(c => c.split(';', 1)[0]).join('; ');
