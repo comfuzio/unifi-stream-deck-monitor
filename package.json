@@ -9,8 +9,7 @@
     "check": "node --check com.comfuzio.unifi-monitor.sdPlugin/app.js && node --check com.comfuzio.unifi-monitor.sdPlugin/unifi.js"
   },
   "dependencies": {
-    "ws": "^8.18.0",
-    "undici": "^6.21.1"
+    "ws": "^8.18.0"
   },
   "engines": {
     "node": ">=24"
