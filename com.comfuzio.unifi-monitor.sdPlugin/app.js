@@ -7,8 +7,8 @@ const { calculateRates, formatMbps } = require('./rates');
 let websocket;
 let pluginUUID;
 const actions = new Map();
-const defaults = { baseUrl: '', apiKey: '', site: '', intervalSeconds: 3 };
-const clampInterval = value => Math.max(2, Math.min(30, Number(value) || 3));
+const defaults = { baseUrl: '', apiKey: '', site: '', intervalSeconds: 5 };
+const clampInterval = value => Math.max(5, Math.min(60, Number(value) || 5));
 
 function send(event, context, payload = {}) {
   if (websocket?.readyState === WebSocket.OPEN) websocket.send(JSON.stringify({ event, context, payload }));
@@ -36,6 +36,7 @@ function connectElgatoStreamDeckSocket(port, uuid, registerEvent) {
         state.client.configure(state.settings);
         state.previous = null;
         if (state.timer) clearTimeout(state.timer);
+        state.timer = null;
         void poll(state);
         schedule(state);
       }
@@ -51,6 +52,14 @@ function connectElgatoStreamDeckSocket(port, uuid, registerEvent) {
       send('sendToPropertyInspector', context, { event: 'settings', settings: state?.settings || defaults });
     } else if (msg.event === 'sendToPlugin' && msg.payload?.event === 'testConnection') {
       void testConnection(context, msg.payload.settings || {});
+    } else if (msg.event === 'sendToPlugin' && msg.payload?.event === 'saveSettings') {
+      const settings = msg.payload.settings || {};
+      if (!settings.baseUrl || !settings.apiKey || !settings.site) {
+        send('sendToPropertyInspector', context, { event: 'settingsSaved', ok: false, message: 'Console URL, API key, and site are required.' });
+      } else {
+        send('setSettings', context, settings);
+        send('sendToPropertyInspector', context, { event: 'settingsSaved', ok: true });
+      }
     }
   });
   websocket.on('error', err => console.error('Stream Deck connection error:', err.message));
