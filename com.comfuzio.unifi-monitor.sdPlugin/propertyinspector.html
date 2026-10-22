@@ -23,7 +23,7 @@
 <label for="site">Site</label>
 <select id="site"><option value="">Test connection to load sites</option></select>
 <label for="intervalSeconds">Refresh interval</label>
-<select id="intervalSeconds"><option value="2">2 seconds</option><option value="3" selected>3 seconds</option><option value="5">5 seconds</option><option value="10">10 seconds</option><option value="15">15 seconds</option><option value="30">30 seconds</option></select>
+<select id="intervalSeconds"><option value="5" selected>5 seconds (recommended)</option><option value="10">10 seconds</option><option value="15">15 seconds</option><option value="30">30 seconds</option><option value="60">60 seconds</option></select>
 <button id="save" type="button">Save settings</button>
 <div id="result" class="hint" role="status" aria-live="polite"></div>
 <p class="hint">TLS certificate verification remains enabled. If your console uses a self-signed certificate, trust its certificate or issuing CA in your operating system first. Do not disable certificate validation.</p>
@@ -44,6 +44,9 @@
         settings = payload.settings || {};
         ['baseUrl','apiKey','site','intervalSeconds'].forEach(id => { if (settings[id] !== undefined && $(id)) $(id).value = settings[id]; });
       }
+      if (payload.event === 'settingsSaved') {
+        $('result').textContent = payload.ok ? 'Settings saved.' : ('Could not save settings: ' + (payload.message || 'Unknown error'));
+      }
       if (payload.event === 'connectionResult') {
         if (!payload.ok) { $('result').textContent = 'Connection failed: ' + (payload.message || 'Unknown error'); return; }
         const previous = $('site').value || settings.site || '';
@@ -55,7 +58,7 @@
     };
   }
   function readSettings() {
-    return {baseUrl:$('baseUrl').value.trim(),apiKey:$('apiKey').value.trim(),site:$('site').value,intervalSeconds:Number($('intervalSeconds').value || 3)};
+    return {baseUrl:$('baseUrl').value.trim(),apiKey:$('apiKey').value.trim(),site:$('site').value,intervalSeconds:Number($('intervalSeconds').value || 5)};
   }
   $('test').addEventListener('click', () => {
     const s = readSettings();
@@ -66,8 +69,8 @@
   $('save').addEventListener('click', () => {
     const s = readSettings();
     if (!s.baseUrl || !s.apiKey || !s.site) { $('result').textContent = 'Enter the URL and API key, test the connection, and select a site first.'; return; }
-    websocket.send(JSON.stringify({event:'setSettings',context,payload:s}));
-    $('result').textContent = 'Settings saved.';
+    websocket.send(JSON.stringify({event:'sendToPlugin',context,payload:{event:'saveSettings',settings:s}}));
+    $('result').textContent = 'Saving settings…';
   });
   window.connectElgatoStreamDeckSocket = connectElgatoStreamDeckSocket;
 })();
