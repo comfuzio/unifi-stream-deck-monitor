@@ -12,7 +12,7 @@ An open-source Elgato Stream Deck plugin for monitoring a local UniFi Network co
 
 ## Status
 
-**Development prototype — not yet a release-ready install.** The earlier prototype used legacy login/API routes and a TLS option that disabled certificate verification. Those are not acceptable foundations for a security-conscious release. The implementation is being migrated to the official Integration API and a secure, guided setup flow. Do not use this repository version as a production monitoring tool until the API migration and tests are complete.
+**Development prototype — not yet a release-ready install.** The plugin now stores API keys through the operating system credential store and keeps the key out of Stream Deck action settings, but packaged Windows/macOS behavior still needs platform testing. Live WAN throughput is also not implemented because the correct endpoint has not been verified. Do not treat this as a production release yet.
 
 ## Planned first-run experience
 
@@ -41,6 +41,9 @@ The default polling interval is 5 seconds (12 polls/minute per visible action th
 - Validate the configured host and restrict requests to expected read-only API paths.
 - Bound request duration and response size; avoid logging API keys, certificate contents, or sensitive client data.
 - Keep dependencies maintained and test supported Node.js runtimes in CI.
+- Store the API key in Windows Credential Manager/macOS Keychain, never in action settings.
+- Request only the minimum read-only permissions needed for site discovery and connected-client counts.
+- No telemetry or third-party service calls; monitoring requests go directly to the configured console.
 
 ## Development
 
@@ -52,6 +55,6 @@ npm test
 npm run check
 ```
 
-See [API notes](docs/API-NOTES.md) for the verified API surface and remaining implementation work.
+See [API notes](docs/API-NOTES.md) for the verified API surface and remaining implementation work. See [credential management and privacy](docs/CREDENTIALS.md) for Windows 11/macOS instructions to change or remove the saved key, required permissions, and network-privacy details.
 
 MIT licensed. See [LICENSE](LICENSE).
