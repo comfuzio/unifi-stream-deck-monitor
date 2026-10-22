@@ -7,16 +7,15 @@ const { calculateRates, formatMbps } = require('./rates');
 let websocket;
 let pluginUUID;
 const actions = new Map();
-const defaults = { baseUrl: 'https://192.168.50.1', username: '', password: '', site: 'default', intervalSeconds: 3, allowSelfSigned: false };
+const defaults = { baseUrl: '', apiKey: '', site: '', intervalSeconds: 3 };
 const clampInterval = value => Math.max(2, Math.min(30, Number(value) || 3));
 
 function send(event, context, payload = {}) {
   if (websocket?.readyState === WebSocket.OPEN) websocket.send(JSON.stringify({ event, context, payload }));
 }
 function title(context, text) { send('setTitle', context, { title: text, target: 0 }); }
-function status(context, message) { title(context, message); }
 
-function connectElgatoStreamDeckSocket(port, uuid, registerEvent, info, actionInfo) {
+function connectElgatoStreamDeckSocket(port, uuid, registerEvent) {
   pluginUUID = uuid;
   websocket = new WebSocket(`ws://127.0.0.1:${port}`);
   websocket.on('open', () => send(registerEvent, pluginUUID));
@@ -35,7 +34,6 @@ function connectElgatoStreamDeckSocket(port, uuid, registerEvent, info, actionIn
       if (state) {
         state.settings = { ...defaults, ...(msg.payload?.settings || {}) };
         state.client.configure(state.settings);
-        state.client.loggedIn = false;
         state.previous = null;
         if (state.timer) clearTimeout(state.timer);
         void poll(state);
@@ -51,17 +49,26 @@ function connectElgatoStreamDeckSocket(port, uuid, registerEvent, info, actionIn
     } else if (msg.event === 'propertyInspectorDidAppear') {
       const state = actions.get(context);
       send('sendToPropertyInspector', context, { event: 'settings', settings: state?.settings || defaults });
+    } else if (msg.event === 'sendToPlugin' && msg.payload?.event === 'testConnection') {
+      void testConnection(context, msg.payload.settings || {});
     }
   });
-  websocket.on('error', err => console.error('Stream Deck WebSocket error:', err.message));
+  websocket.on('error', err => console.error('Stream Deck connection error:', err.message));
+}
+
+async function testConnection(context, settings) {
+  try {
+    const client = new UniFiClient(settings);
+    const sites = await client.getSites();
+    send('sendToPropertyInspector', context, { event: 'connectionResult', ok: true, sites });
+  } catch (error) {
+    send('sendToPropertyInspector', context, { event: 'connectionResult', ok: false, message: error.message });
+  }
 }
 
 function schedule(state) {
   if (!state.visible) return;
-  state.timer = setTimeout(async () => {
-    await poll(state);
-    schedule(state);
-  }, clampInterval(state.settings.intervalSeconds) * 1000);
+  state.timer = setTimeout(async () => { await poll(state); schedule(state); }, clampInterval(state.settings.intervalSeconds) * 1000);
 }
 
 async function poll(state) {
@@ -69,7 +76,7 @@ async function poll(state) {
   state.busy = true;
   try {
     if (!state.client.isConfigured()) {
-      status(state.context, 'Set UniFi settings');
+      title(state.context, 'Configure UniFi\nsettings');
       return;
     }
     if (state.action === 'com.comfuzio.unifi.clients') {
@@ -84,10 +91,8 @@ async function poll(state) {
     }
   } catch (error) {
     console.error('UniFi polling failed:', error.message);
-    status(state.context, error.message.length > 34 ? 'UniFi API error\nCheck logs/settings' : error.message);
-  } finally {
-    state.busy = false;
-  }
+    title(state.context, state.action === 'com.comfuzio.unifi.bandwidth' ? 'WAN rate\nnot available' : 'UniFi API\ncheck settings');
+  } finally { state.busy = false; }
 }
 
 global.connectElgatoStreamDeckSocket = connectElgatoStreamDeckSocket;
