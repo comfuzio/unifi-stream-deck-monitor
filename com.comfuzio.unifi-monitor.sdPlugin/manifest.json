@@ -35,16 +35,24 @@
   "Category": "Network",
   "CategoryIcon": "images/category",
   "CodePath": "app.js",
-  "Description": "Monitor WAN bandwidth and active clients on UniFi OS consoles, including UCG-Fiber.",
+  "Description": "Monitor WAN bandwidth and active clients on UniFi OS consoles using the Integration API.",
   "Icon": "images/plugin",
   "Name": "UniFi Monitor",
   "Nodejs": {
-    "Version": "20"
+    "Version": "24"
   },
   "OS": [
-    { "Platform": "windows", "MinimumVersion": "10" },
-    { "Platform": "mac", "MinimumVersion": "10.15" }
+    {
+      "Platform": "windows",
+      "MinimumVersion": "10"
+    },
+    {
+      "Platform": "mac",
+      "MinimumVersion": "10.15"
+    }
   ],
-  "Software": { "MinimumVersion": "6.0" },
-  "Version": "0.1.0"
+  "Software": {
+    "MinimumVersion": "7.1"
+  },
+  "Version": "0.2.0"
 }
