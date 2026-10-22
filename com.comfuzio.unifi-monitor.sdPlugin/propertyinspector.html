@@ -10,28 +10,32 @@
   .hint { opacity:.78; font-size:11px; line-height:1.45; }
   button { margin-top:10px; cursor:pointer; }
   #result { white-space:pre-wrap; margin-top:8px; }
+  #credentialStatus { margin-top:8px; }
+  .danger { margin-top:16px; }
 </style>
 </head>
 <body>
 <h3>UniFi Monitor setup</h3>
-<p class="hint">Enter your local console HTTPS address and a UniFi Integration API key. The plugin uses read-only Integration API requests and does not need your UniFi account password.</p>
+<p class="hint">Connect directly to your local UniFi console using a read-only Integration API key. Your UniFi account password is not needed. The key is stored in the operating system's credential store; it is not saved in Stream Deck action settings.</p>
 <label for="baseUrl">Console HTTPS URL</label>
-<input id="baseUrl" type="url" placeholder="https://192.168.50.1" autocomplete="url">
+<input id="baseUrl" type="url" placeholder="https://unifi.local" autocomplete="url">
 <label for="apiKey">Integration API key</label>
-<input id="apiKey" type="password" autocomplete="off" spellcheck="false">
+<input id="apiKey" type="password" placeholder="Enter a key, or leave blank to keep the saved key" autocomplete="new-password" spellcheck="false">
+<div id="credentialStatus" class="hint">No saved key detected.</div>
 <button id="test" type="button">Test connection &amp; find sites</button>
 <label for="site">Site</label>
 <select id="site"><option value="">Test connection to load sites</option></select>
 <label for="intervalSeconds">Refresh interval</label>
 <select id="intervalSeconds"><option value="5" selected>5 seconds (recommended)</option><option value="10">10 seconds</option><option value="15">15 seconds</option><option value="30">30 seconds</option><option value="60">60 seconds</option></select>
 <button id="save" type="button">Save settings</button>
+<button id="forget" class="danger" type="button">Forget saved API key</button>
 <div id="result" class="hint" role="status" aria-live="polite"></div>
-<p class="hint">TLS certificate verification remains enabled. If your console uses a self-signed certificate, trust its certificate or issuing CA in your operating system first. Do not disable certificate validation.</p>
+<p class="hint">Permissions: the key should have only the read access needed to view sites and connected clients. The plugin makes HTTPS GET requests to your configured console. TLS certificate verification stays enabled. No telemetry or third-party analytics are included; the plugin does not send monitoring data to Comfuzio or any other service.</p>
+<p class="hint">No administrator password should be needed. macOS may ask you once to allow Keychain access; if it asks on every launch, do not keep approving it—check the app's signing/Keychain access and report the issue.</p>
 <script>
 (() => {
-  let websocket, context, settings = {};
+  let websocket, context, settings = {}, hasCredential = false;
   const $ = id => document.getElementById(id);
-  const ids = ['baseUrl','apiKey','site','intervalSeconds'];
   function connectElgatoStreamDeckSocket(port, uuid, registerEvent, info, actionInfo) {
     context = actionInfo ? JSON.parse(actionInfo).context : undefined;
     websocket = new WebSocket('ws://127.0.0.1:' + port);
@@ -40,12 +44,13 @@
       let msg; try { msg = JSON.parse(event.data); } catch { return; }
       if (msg.event !== 'sendToPropertyInspector') return;
       const payload = msg.payload || {};
-      if (payload.event === 'settings') {
-        settings = payload.settings || {};
-        ['baseUrl','apiKey','site','intervalSeconds'].forEach(id => { if (settings[id] !== undefined && $(id)) $(id).value = settings[id]; });
-      }
-      if (payload.event === 'settingsSaved') {
-        $('result').textContent = payload.ok ? 'Settings saved.' : ('Could not save settings: ' + (payload.message || 'Unknown error'));
+      if (payload.event === 'settings') applySettings(payload.settings || {});
+      if (payload.event === 'settingsSaved' && payload.ok) {
+        if (payload.settings) applySettings(payload.settings);
+        $('apiKey').value = '';
+        $('result').textContent = 'Settings saved. The API key is stored by the operating system, not in Stream Deck settings.';
+      } else if (payload.event === 'settingsSaved') {
+        $('result').textContent = 'Could not save settings: ' + (payload.message || 'Unknown error');
       }
       if (payload.event === 'connectionResult') {
         if (!payload.ok) { $('result').textContent = 'Connection failed: ' + (payload.message || 'Unknown error'); return; }
@@ -55,22 +60,43 @@
         if ([...$('site').options].some(o => o.value === previous)) $('site').value = previous;
         $('result').textContent = 'Connection successful. Select your site and save.';
       }
+      if (payload.event === 'credentialForgotten') {
+        if (!payload.ok) { $('result').textContent = 'Could not remove saved key: ' + (payload.message || 'Unknown error'); return; }
+        if (payload.settings) applySettings(payload.settings);
+        $('apiKey').value = '';
+        $('result').textContent = 'Saved API key forgotten. Enter a new key and save to reconnect.';
+      }
     };
   }
+  function applySettings(next) {
+    settings = next || {};
+    hasCredential = Boolean(settings.hasCredential);
+    $('baseUrl').value = settings.baseUrl || '';
+    $('site').replaceChildren(new Option(settings.site ? 'Re-test to refresh site list' : 'Test connection to load sites',''));
+    if (settings.site) $('site').add(new Option(settings.site, settings.site, true, true));
+    $('intervalSeconds').value = String(settings.intervalSeconds || 5);
+    $('credentialStatus').textContent = hasCredential ? 'A saved API key is available. Leave the field blank to keep it, or enter a replacement.' : 'No saved key detected. Enter an API key to connect.';
+  }
   function readSettings() {
-    return {baseUrl:$('baseUrl').value.trim(),apiKey:$('apiKey').value.trim(),site:$('site').value,intervalSeconds:Number($('intervalSeconds').value || 5)};
+    return {baseUrl:$('baseUrl').value.trim(),apiKey:$('apiKey').value.trim(),site:$('site').value,intervalSeconds:Number($('intervalSeconds').value || 5),credentialId:settings.credentialId || ''};
   }
   $('test').addEventListener('click', () => {
     const s = readSettings();
-    if (!s.baseUrl || !s.apiKey) { $('result').textContent = 'Enter the console URL and API key first.'; return; }
+    if (!s.baseUrl || (!s.apiKey && !hasCredential)) { $('result').textContent = 'Enter the console URL and API key first.'; return; }
     $('result').textContent = 'Testing connection…';
     websocket.send(JSON.stringify({event:'sendToPlugin',context,payload:{event:'testConnection',settings:s}}));
   });
   $('save').addEventListener('click', () => {
     const s = readSettings();
-    if (!s.baseUrl || !s.apiKey || !s.site) { $('result').textContent = 'Enter the URL and API key, test the connection, and select a site first.'; return; }
+    if (!s.baseUrl || !s.site || (!s.apiKey && !hasCredential)) { $('result').textContent = 'Enter the URL, test the connection, select a site, and provide an API key (unless one is already saved).'; return; }
     websocket.send(JSON.stringify({event:'sendToPlugin',context,payload:{event:'saveSettings',settings:s}}));
     $('result').textContent = 'Saving settings…';
+  });
+  $('forget').addEventListener('click', () => {
+    if (!hasCredential || !settings.credentialId) { $('result').textContent = 'There is no saved API key to remove.'; return; }
+    if (!window.confirm('Remove this plugin’s saved UniFi API key from the operating-system credential store? Monitoring will stop until you enter a key again.')) return;
+    websocket.send(JSON.stringify({event:'sendToPlugin',context,payload:{event:'forgetCredential',settings:readSettings()}}));
+    $('result').textContent = 'Removing saved key…';
   });
   window.connectElgatoStreamDeckSocket = connectElgatoStreamDeckSocket;
 })();
