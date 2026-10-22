@@ -1,0 +1,50 @@
+{
+  "Actions": [
+    {
+      "Icon": "images/action",
+      "Name": "UniFi Bandwidth",
+      "States": [
+        {
+          "Image": "images/action",
+          "TitleAlignment": "middle",
+          "FontSize": "12"
+        }
+      ],
+      "PropertyInspectorPath": "propertyinspector.html",
+      "SupportedInMultiActions": false,
+      "Tooltip": "Live UniFi WAN download and upload rates",
+      "UUID": "com.comfuzio.unifi.bandwidth"
+    },
+    {
+      "Icon": "images/action",
+      "Name": "UniFi Clients",
+      "States": [
+        {
+          "Image": "images/action",
+          "TitleAlignment": "middle",
+          "FontSize": "14"
+        }
+      ],
+      "PropertyInspectorPath": "propertyinspector.html",
+      "SupportedInMultiActions": false,
+      "Tooltip": "Number of currently connected UniFi clients",
+      "UUID": "com.comfuzio.unifi.clients"
+    }
+  ],
+  "Author": "Comfuzio",
+  "Category": "Network",
+  "CategoryIcon": "images/category",
+  "CodePath": "app.js",
+  "Description": "Monitor WAN bandwidth and active clients on UniFi OS consoles, including UCG-Fiber.",
+  "Icon": "images/plugin",
+  "Name": "UniFi Monitor",
+  "Nodejs": {
+    "Version": "20"
+  },
+  "OS": [
+    { "Platform": "windows", "MinimumVersion": "10" },
+    { "Platform": "mac", "MinimumVersion": "10.15" }
+  ],
+  "Software": { "MinimumVersion": "6.0" },
+  "Version": "0.1.0"
+}
