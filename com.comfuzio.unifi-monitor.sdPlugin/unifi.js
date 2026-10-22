@@ -1,122 +1,79 @@
 'use strict';
 
-const { Agent } = require('undici');
-
-function makeAgent(allowSelfSigned) {
-  return new Agent({ connect: { rejectUnauthorized: !allowSelfSigned } });
-}
-
-function firstFinite(objects, keys) {
-  for (const object of objects) {
-    if (!object || typeof object !== 'object') continue;
-    for (const key of keys) {
-      const value = Number(object[key]);
-      if (object[key] !== undefined && Number.isFinite(value) && value >= 0) return value;
-    }
-  }
-  return null;
-}
+const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
+const REQUEST_TIMEOUT_MS = 8000;
 
 class UniFiClient {
-  constructor(settings = {}) {
-    this.configure(settings);
-    this.cookie = '';
-    this.csrfToken = '';
-    this.loggedIn = false;
-  }
+  constructor(settings = {}) { this.configure(settings); }
 
   configure(settings = {}) {
     this.baseUrl = String(settings.baseUrl || '').trim().replace(/\/+$/, '');
-    this.username = String(settings.username || '');
-    this.password = String(settings.password || '');
-    this.site = String(settings.site || 'default').trim() || 'default';
-    this.allowSelfSigned = settings.allowSelfSigned === true;
-    this.agent = makeAgent(this.allowSelfSigned);
-    this.timeoutMs = Math.max(2000, Math.min(Number(settings.timeoutMs) || 8000, 30000));
+    this.apiKey = String(settings.apiKey || '').trim();
+    this.site = String(settings.site || '').trim();
   }
 
   isConfigured() {
-    return /^https?:\/\//i.test(this.baseUrl) && this.username.length > 0 && this.password.length > 0;
+    try {
+      const url = new URL(this.baseUrl);
+      return url.protocol === 'https:' && Boolean(this.apiKey);
+    } catch { return false; }
   }
 
-  async request(path, options = {}) {
-    const url = new URL(path, this.baseUrl + '/');
-    if (!['http:', 'https:'].includes(url.protocol)) throw new Error('Console URL must use HTTP or HTTPS');
+  async request(path) {
+    if (!this.isConfigured()) throw new Error('Enter the HTTPS console URL and API key in settings');
+    if (!path.startsWith('/proxy/network/integration/v1/')) throw new Error('Blocked non-Integration API path');
+    const base = new URL(this.baseUrl);
+    const url = new URL(path, base);
+    if (url.origin !== base.origin || url.protocol !== 'https:') throw new Error('Request URL must match the configured HTTPS console');
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
-      const headers = { Accept: 'application/json', ...(options.headers || {}) };
-      if (this.cookie) headers.Cookie = this.cookie;
-      if (this.csrfToken) headers['x-csrf-token'] = this.csrfToken;
       const response = await fetch(url, {
-        method: options.method || 'GET',
-        headers,
-        body: options.body,
+        method: 'GET',
+        redirect: 'error',
         signal: controller.signal,
-        dispatcher: this.agent
+        headers: { Accept: 'application/json', 'X-API-KEY': this.apiKey }
       });
-      const setCookies = response.headers.getSetCookie?.() || [];
-      if (setCookies.length) this.cookie = setCookies.map(c => c.split(';', 1)[0]).join('; ');
-      const csrf = response.headers.get('x-csrf-token');
-      if (csrf) this.csrfToken = csrf;
-      const text = await response.text();
-      let data = null;
-      if (text) {
-        try { data = JSON.parse(text); } catch { throw new Error('UniFi returned a non-JSON response (check console URL and endpoint)'); }
-      }
+      const length = Number(response.headers.get('content-length') || 0);
+      if (length > MAX_RESPONSE_BYTES) throw new Error('UniFi response exceeded the size limit');
       if (!response.ok) {
-        if (response.status === 401 || response.status === 403) this.loggedIn = false;
-        throw new Error(`UniFi API HTTP ${response.status}`);
+        if (response.status === 401) throw new Error('API key rejected (HTTP 401)');
+        if (response.status === 403) throw new Error('API key lacks permission (HTTP 403)');
+        throw new Error(`UniFi API returned HTTP ${response.status}`);
       }
+      const text = await response.text();
+      if (Buffer.byteLength(text, 'utf8') > MAX_RESPONSE_BYTES) throw new Error('UniFi response exceeded the size limit');
+      let data;
+      try { data = JSON.parse(text); } catch { throw new Error('UniFi returned invalid JSON'); }
       return data;
     } catch (error) {
       if (error.name === 'AbortError') throw new Error('UniFi request timed out');
+      if (error.cause?.code === 'CERT_HAS_EXPIRED') throw new Error('Console TLS certificate has expired');
+      if (error.cause?.code === 'DEPTH_ZERO_SELF_SIGNED_CERT' || error.cause?.code === 'SELF_SIGNED_CERT_IN_CHAIN') {
+        throw new Error('Console uses an untrusted certificate. Trust its certificate/CA in the operating system, then retry.');
+      }
+      if (error.cause?.code === 'ERR_TLS_CERT_ALTNAME_INVALID') {
+        throw new Error('Console certificate name does not match the URL. Use a hostname listed in the certificate.');
+      }
       throw error;
-    } finally {
-      clearTimeout(timer);
-    }
+    } finally { clearTimeout(timer); }
   }
 
-  async login() {
-    if (!this.isConfigured()) throw new Error('Configure console URL, username, and password in action settings');
-    const response = await this.request('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: this.username, password: this.password, rememberMe: true })
-    });
-    if (response?.meta?.rc && response.meta.rc !== 'ok') throw new Error('UniFi login rejected');
-    this.loggedIn = true;
-    return true;
-  }
-
-  async ensureLogin() {
-    if (!this.loggedIn) await this.login();
+  async getSites() {
+    const response = await this.request('/proxy/network/integration/v1/sites');
+    if (!Array.isArray(response?.data)) throw new Error('Unexpected sites response from UniFi');
+    return response.data.map(site => ({ id: String(site.id || ''), name: String(site.name || site.internalReference || site.id || 'Unnamed site') })).filter(site => site.id);
   }
 
   async getActiveClients() {
-    await this.ensureLogin();
-    const response = await this.request(`/proxy/network/api/s/${encodeURIComponent(this.site)}/stat/sta`);
-    if (!Array.isArray(response?.data)) throw new Error('Unexpected active-client API response');
-    return response.data.length;
+    if (!this.site) throw new Error('Test the connection and select a site first');
+    const response = await this.request(`/proxy/network/integration/v1/sites/${encodeURIComponent(this.site)}/clients?offset=0&limit=1`);
+    if (!Number.isInteger(response?.totalCount) || response.totalCount < 0) throw new Error('Unexpected connected-clients response');
+    return response.totalCount;
   }
 
   async getWanCounters() {
-    await this.ensureLogin();
-    // UniFi Network's stat/health response commonly exposes WAN interface counters.
-    // Schema differs by release; accept only explicit byte-counter fields.
-    const response = await this.request(`/proxy/network/api/s/${encodeURIComponent(this.site)}/stat/health`);
-    const rows = Array.isArray(response?.data) ? response.data : [];
-    const wanRows = rows.filter(row => {
-      const name = String(row?.subsystem || row?.name || row?._id || '').toLowerCase();
-      return name.includes('wan') || name.includes('internet');
-    });
-    const candidates = [...wanRows, ...rows];
-    const rxBytes = firstFinite(candidates, ['rx_bytes', 'download_bytes', 'bytes_recv', 'rxBytes']);
-    const txBytes = firstFinite(candidates, ['tx_bytes', 'upload_bytes', 'bytes_sent', 'txBytes']);
-    if (rxBytes === null || txBytes === null) {
-      throw new Error('WAN byte counters were not found in stat/health; API schema may differ on this UniFi version');
-    }
-    return { rxBytes, txBytes, sampledAt: Date.now() };
+    throw new Error('Real-time WAN counters are not yet verified for this UniFi API version');
   }
 }
 
