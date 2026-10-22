@@ -1,6 +1,6 @@
 {
   "name": "com.comfuzio.unifi-stream-deck-monitor",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Local UniFi WAN bandwidth and connected-client monitoring for Elgato Stream Deck",
   "main": "com.comfuzio.unifi-monitor.sdPlugin/app.js",
@@ -9,7 +9,8 @@
     "check": "node --check com.comfuzio.unifi-monitor.sdPlugin/app.js && node --check com.comfuzio.unifi-monitor.sdPlugin/unifi.js"
   },
   "dependencies": {
-    "ws": "^8.18.0"
+    "ws": "^8.18.0",
+    "@napi-rs/keyring": "^2.1.1"
   },
   "engines": {
     "node": ">=24"
